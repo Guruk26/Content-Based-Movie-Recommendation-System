@@ -56,9 +56,9 @@ def build_model(df):
 # ============================================================
 # Step 4: Recommendation Function
 # ============================================================
-def recommend(movie_name, df, cosine_sim, movie_indices, top_n=5):
+def recommend(movie_name, df, cosine_sim, movie_indices, top_n=5, selected_genres=None):
     """
-    Return top N movies similar to the given movie.
+    Return top N movies similar to the given movie, optionally filtered by genre.
     """
     # Find index of the selected movie
     idx = movie_indices[movie_name]
@@ -69,8 +69,20 @@ def recommend(movie_name, df, cosine_sim, movie_indices, top_n=5):
     # Sort by similarity score (highest first)
     sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
 
-    # Exclude the movie itself (index 0) and take top N
-    sim_scores = sim_scores[1:top_n + 1]
+    # Exclude the movie itself
+    sim_scores = sim_scores[1:]
+
+    # Keep movies matching at least one selected genre. Genres in the dataset
+    # are space-separated (for example, "Action Sci-Fi Thriller").
+    if selected_genres:
+        selected_genres = set(selected_genres)
+        sim_scores = [
+            score for score in sim_scores
+            if selected_genres.intersection(str(df['genre'].iloc[score[0]]).split())
+        ]
+
+    # Apply the existing recommendation-count selection after filtering.
+    sim_scores = sim_scores[:top_n]
 
     # Get movie indices and scores
     movie_idx_list = [i[0] for i in sim_scores]
@@ -78,7 +90,7 @@ def recommend(movie_name, df, cosine_sim, movie_indices, top_n=5):
 
     # Build results DataFrame
     result = pd.DataFrame({
-        'Rank': range(1, top_n + 1),
+        'Rank': range(1, len(movie_idx_list) + 1),
         'Movie Title': df['title'].iloc[movie_idx_list].values,
         'Genre': df['genre'].iloc[movie_idx_list].values,
         'Similarity Score': score_list
@@ -126,6 +138,18 @@ selected_movie = st.selectbox(
 # Slider to choose number of recommendations
 top_n = st.slider('📋 Number of Recommendations:', min_value=1, max_value=10, value=5)
 
+# Genre filter options are derived from the dataset's space-separated genre values.
+available_genres = sorted({
+    genre
+    for genres in df['genre'].fillna('')
+    for genre in genres.split()
+})
+selected_genres = st.multiselect(
+    '🎭 Filter Recommendations by Genre',
+    options=available_genres,
+    help='Select one or more genres to show recommendations matching any selected genre.'
+)
+
 # Button to generate recommendations
 if st.button('🔍 Get Recommendations', type='primary'):
 
@@ -136,18 +160,23 @@ if st.button('🔍 Get Recommendations', type='primary'):
 
     # Generate recommendations
     st.markdown(f'### ✅ Top {top_n} Recommended Movies')
-    recommendations = recommend(selected_movie, df, cosine_sim, movie_indices, top_n)
+    recommendations = recommend(
+        selected_movie, df, cosine_sim, movie_indices, top_n, selected_genres
+    )
 
-    # Display as a table
-    st.dataframe(recommendations, use_container_width=True, hide_index=True)
+    if recommendations.empty:
+        st.info('No recommended movies match the selected genre filter. Try different genres or clear the filter.')
+    else:
+        # Display as a table
+        st.dataframe(recommendations, use_container_width=True, hide_index=True)
 
-    # Also show as individual cards
-    st.markdown('### 📋 Recommendation Details')
-    for _, row in recommendations.iterrows():
-        with st.expander(f"#{int(row['Rank'])} {row['Movie Title']} (Score: {row['Similarity Score']})"):
-            movie_detail = df[df['title'] == row['Movie Title']].iloc[0]
-            st.write(f"**Genre:** {movie_detail['genre']}")
-            st.write(f"**Description:** {movie_detail['description']}")
+        # Also show as individual cards
+        st.markdown('### 📋 Recommendation Details')
+        for _, row in recommendations.iterrows():
+            with st.expander(f"#{int(row['Rank'])} {row['Movie Title']} (Score: {row['Similarity Score']})"):
+                movie_detail = df[df['title'] == row['Movie Title']].iloc[0]
+                st.write(f"**Genre:** {movie_detail['genre']}")
+                st.write(f"**Description:** {movie_detail['description']}")
 
 st.markdown('---')
 st.caption('Assignment 20 — Building & Deploying a Recommendation System')
